@@ -14,9 +14,9 @@
 
 /**
  * @typedef {object} RetyrOptions
- * @property {number} maxRetries
- * @property {number} retryIntervalMs
- * @property {(...arg0: string[]) => void} log
+ * @property {number} [maxRetries]
+ * @property {number} [retryIntervalMs]
+ * @property {(...arg0: string[]) => void} [log]
  * @property {(object) => void} [setTimeout]
  * @property {string} [errorMessage=Error]
  *
@@ -51,7 +51,7 @@ const sleep = (ms, { log = () => {}, setTimeout = ambientSetTimeout }) =>
  * @param {RetyrOptions} options
  * @returns
  */
-const retryUntilCondition = async (
+export const retryUntilCondition = async (
   operation,
   condition,
   message,
