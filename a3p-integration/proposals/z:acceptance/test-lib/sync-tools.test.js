@@ -1,3 +1,6 @@
+// Stand-in code for PR https://github.com/Agoric/agoric-sdk/pull/10171.
+// This file will be dropped when 10171 goes in.
+
 // @ts-check
 import test from 'ava';
 import '@endo/init/debug.js';

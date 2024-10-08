@@ -1,3 +1,6 @@
+// Stand-in code for PR https://github.com/Agoric/agoric-sdk/pull/10171.
+// This file will be dropped when 10171 goes in.
+
 /**
  * @file The purpose of this file is to bring together a set of tool that
  * developers can use to synchronize operations they carry out in their tests.
