@@ -1,5 +1,6 @@
+/* eslint-env node */
+
 import '@endo/init';
-import { boardSlottingMarshaller, makeFromBoard } from './rpc.js';
 import {
   addUser,
   agd,
@@ -15,9 +16,27 @@ import {
   mkTemp,
 } from '@agoric/synthetic-chain';
 import { AmountMath } from '@agoric/ertp';
-import { getBalances } from './utils.js';
-import { PSM_PAIR, USDC_DENOM } from '../psm.test.js';
 import fsp from 'node:fs/promises';
+import { boardSlottingMarshaller, makeFromBoard } from './rpc.js';
+import { getBalances } from './utils.js';
+import { sleep } from './sync-tools.js';
+
+// Export these from synthetic-chain?
+export const USDC_DENOM = process.env.USDC_DENOM
+  ? process.env.USDC_DENOM
+  : 'no-denom';
+export const PSM_PAIR = process.env.PSM_PAIR?.replace('.', '-');
+
+/**
+ * @typedef {object} PsmMetrics
+ * @property {import('@agoric/ertp').Amount<'nat'>} anchorPoolBalance
+ * @property {import('@agoric/ertp').Amount<'nat'>} feePoolBalance
+ * @property {import('@agoric/ertp').Amount<'nat'>} mintedPoolBalance
+ * @property {import('@agoric/ertp').Amount<'nat'>} totalAnchorProvided
+ * @property {import('@agoric/ertp').Amount<'nat'>} totalMintedProvided
+ *
+ * @typedef {Array<{ denom: string; amount: string; }>} CosmosBalances
+ */
 
 const fromBoard = makeFromBoard();
 const marshaller = boardSlottingMarshaller(fromBoard.convertSlotToVal);
@@ -95,7 +114,7 @@ export const buildProposePSMParamChangeOffer = async ({
     };
   };
 
-  let params = {};
+  const params = {};
   if (newParams.giveMintedFeeVal) {
     params.GiveMintedFee = toRatio(newParams.giveMintedFeeVal);
   }
@@ -178,7 +197,35 @@ export const implementPsmGovParamChange = async (question, voting) => {
   await buildProposePSMParamChangeOffer(question);
   await voteForNewParams(voting);
   console.log('ACTIONS wait for the vote deadline to pass');
-  await new Promise(r => setTimeout(r, VOTING_WAIT_MS));
+  await sleep(VOTING_WAIT_MS, { log: console.log });
+};
+
+/**
+ * @param {string} anchor
+ */
+export const getPsmGovernance = async anchor => {
+  const governanceRaw = await agoric.follow(
+    '-lF',
+    `:published.psm.IST.${anchor}.governance`,
+    '-o',
+    'text',
+  );
+  const { current } = marshaller.fromCapData(JSON.parse(governanceRaw));
+  return current;
+};
+
+/**
+ * @param {string} anchor
+ */
+export const getPsmMetrics = async anchor => {
+  const metricsRaw = await agoric.follow(
+    '-lF',
+    `:published.psm.IST.${anchor}.metrics`,
+    '-o',
+    'text',
+  );
+
+  return marshaller.fromCapData(JSON.parse(metricsRaw));
 };
 
 export const checkGovParams = async (t, expected, psmName) => {
@@ -211,7 +258,6 @@ export const initializeNewUser = async (name, fund) => {
 
 /**
  *
- * @param {any} t
  * @param {string} userName
  * @param {{
  *   denom: string,
@@ -219,18 +265,13 @@ export const initializeNewUser = async (name, fund) => {
  * }} expectedAnchorFunds
  */
 export const checkUserInitializedSuccessfully = async (
-  t,
   userName,
   expectedAnchorFunds,
 ) => {
-  let userAddress;
-  await t.notThrowsAsync(async () => {
-    userAddress = await getUser(userName);
-  });
+  const userAddress = await getUser(userName);
 
-  // @ts-expect-error initialization
   const balance = await getBalances([userAddress], expectedAnchorFunds.denom);
-  t.is(balance >= BigInt(expectedAnchorFunds.value), true);
+  assert(balance >= BigInt(expectedAnchorFunds.value));
 };
 
 /**
@@ -267,25 +308,40 @@ export const agopsPsm = (address, params) => {
   return sendOfferAgoric(address, offerPromise);
 };
 
-const giveAnchor = (base, fee) => {
-  return Math.ceil(base / (1 - fee));
-};
+/**
+ *
+ * @param {number} base
+ * @param {number} fee
+ * @returns
+ */
+const giveAnchor = (base, fee) => Math.ceil(base / (1 - fee));
 
-const receiveAnchor = (base, fee) => {
-  return Math.ceil(base * (1 - fee));
-};
+/**
+ *
+ * @param {number} base
+ * @param {number} fee
+ * @returns
+ */
+const receiveAnchor = (base, fee) => Math.ceil(base * (1 - fee));
 
+/**
+ *
+ * @param {CosmosBalances} balances
+ * @param {string} targetDenom
+ * @returns
+ */
 const extractBalance = (balances, targetDenom) => {
   const balance = balances.find(({ denom }) => denom === targetDenom);
+  if (!balance) return 0;
   return Number(balance.amount);
 };
 
 /**
  *
- * @param {any} t
- * @param {any} metricsBefore
- * @param {any} balancesBefore
- * @param {{trader: string; fee: number} & (
+ * @param {import('ava').ExecutionContext} t
+ * @param {PsmMetrics} metricsBefore
+ * @param {CosmosBalances} balancesBefore
+ * @param {{trader: string; fee: number; anchor: string;} & (
  *   | {wantMinted: number}
  *   | {giveMinted: number}
  * )} tradeInfo
@@ -297,14 +353,7 @@ export const checkSwapSucceeded = async (
   tradeInfo,
 ) => {
   const [metricsAfter, balancesAfter] = await Promise.all([
-    agoric
-      .follow(
-        '-lF',
-        `:published.psm.IST.${PSM_PAIR?.split('-')[1]}.metrics`,
-        '-o',
-        'text',
-      )
-      .then(metricsRaw => marshaller.fromCapData(JSON.parse(metricsRaw))),
+    getPsmMetrics(tradeInfo.anchor),
     getBalances([tradeInfo.trader]),
   ]);
 
@@ -401,11 +450,11 @@ export const adjustBalancesIfNotProvisioned = async (balances, address) => {
 
   if (addressProvisioned === true) return balances;
 
-  let balancesAdjusted = [];
+  const balancesAdjusted = [];
 
   balances.forEach(({ denom, amount }) => {
     if (denom === 'uist') {
-      amount = (parseInt(amount) + 250000 - 1_000_000).toString(); // provision sends 250000uist to new accounts and 1 IST is charged
+      amount = (parseInt(amount, 10) + 250000 - 1_000_000).toString(); // provision sends 250000uist to new accounts and 1 IST is charged
       balancesAdjusted.push({ denom, amount });
     } else {
       balancesAdjusted.push({ denom, amount });
@@ -434,34 +483,6 @@ export const checkSwapExceedMintLimit = async (t, address, metricsBefore) => {
   t.like(metricsBefore, {
     mintedPoolBalance: { value: metricsAfter.mintedPoolBalance.value },
   });
-};
-
-/**
- * @param {string} anchor
- */
-export const getPsmMetrics = async anchor => {
-  const metricsRaw = await agoric.follow(
-    '-lF',
-    `:published.psm.IST.${anchor}.metrics`,
-    '-o',
-    'text',
-  );
-
-  return marshaller.fromCapData(JSON.parse(metricsRaw));
-};
-
-/**
- * @param {string} anchor
- */
-export const getPsmGovernance = async anchor => {
-  const governanceRaw = await agoric.follow(
-    '-lF',
-    `:published.psm.IST.${anchor}.governance`,
-    '-o',
-    'text',
-  );
-  const { current } = marshaller.fromCapData(JSON.parse(governanceRaw));
-  return current;
 };
 
 /**

@@ -1,3 +1,4 @@
+/* eslint-env node */
 /**
  * @file The goal of this file is to implement a set of tests to make sure PSM works properly
  *
@@ -13,6 +14,13 @@
 
 import test from 'ava';
 import {
+  getUser,
+  GOV1ADDR,
+  GOV2ADDR,
+  GOV3ADDR,
+  waitForBlock,
+} from '@agoric/synthetic-chain';
+import {
   adjustBalancesIfNotProvisioned,
   agopsPsm,
   bankSend,
@@ -25,17 +33,12 @@ import {
   initializeNewUser,
   maxMintBelowLimit,
 } from './test-lib/psm-lib.js';
-import {
-  getUser,
-  GOV1ADDR,
-  GOV2ADDR,
-  GOV3ADDR,
-  waitForBlock,
-} from '@agoric/synthetic-chain';
 import { getBalances } from './test-lib/utils.js';
 
 // Export these from synthetic-chain?
-export const USDC_DENOM = process.env.USDC_DENOM;
+export const USDC_DENOM = process.env.USDC_DENOM
+  ? process.env.USDC_DENOM
+  : 'no-denom';
 export const PSM_PAIR = process.env.PSM_PAIR?.replace('.', '-');
 
 const psmTestSpecs = {
@@ -51,15 +54,15 @@ const psmTestSpecs = {
   newUser: {
     name: 'new-psm-trader',
     fund: {
-      denom: USDC_DENOM ? USDC_DENOM : 'fake',
-      value: '300000000', // 300 USDC_grv
+      denom: USDC_DENOM,
+      value: '300000000', // 300 USDC_axl
     },
   },
   otherUser: {
     name: 'gov1',
     fund: {
-      denom: USDC_DENOM ? USDC_DENOM : 'fake',
-      value: '1000000000', // 1000 USDC_grv
+      denom: USDC_DENOM,
+      value: '1000000000', // 1000 USDC_axl
     },
     toIst: {
       value: 500, // in IST
@@ -121,7 +124,8 @@ test.serial('initialize new user', async t => {
   // Replace when https://github.com/Agoric/agoric-sdk/pull/10171 is in
   await waitForBlock(3);
 
-  await checkUserInitializedSuccessfully(t, name, fund);
+  await checkUserInitializedSuccessfully(name, fund);
+  t.pass();
 });
 
 test.serial('swap into IST', async t => {
@@ -161,6 +165,7 @@ test.serial('swap into IST', async t => {
     wantMinted: toIst.value,
     trader: psmTrader,
     fee: Number(wantMintedFeeVal) / 100, // fee has to be between 0 and 1
+    anchor,
   });
 });
 
@@ -197,6 +202,7 @@ test.serial('swap out of IST', async t => {
     giveMinted: fromIst.value,
     trader: psmTrader,
     fee: Number(giveMintedFeeVal) / 100, // fee has to be between 0 and 1
+    anchor,
   });
 });
 
@@ -263,5 +269,6 @@ test.serial('mint limit is adhered', async t => {
     wantMinted: maxMintFeesAccounted / 1000000,
     trader: otherAddr,
     fee: Number(govParams.wantMintedFeeVal) / 100, // fee has to be between 0 and 1
+    anchor,
   });
 });
