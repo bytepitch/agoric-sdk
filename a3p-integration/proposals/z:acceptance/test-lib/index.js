@@ -1,7 +1,3 @@
-/* global fetch setTimeout */
-import { execFileSync } from 'child_process';
-import { makeWalletUtils } from './wallet.js';
-
 export const networkConfig = {
   rpcAddrs: ['http://0.0.0.0:26657'],
   chainName: 'agoriclocal',
