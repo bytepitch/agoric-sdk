@@ -2,9 +2,9 @@ import { test as anyTest } from '@agoric/zoe/tools/prepare-test-env-ava.js';
 
 import type { TestFn } from 'ava';
 import {
-  LiquidationTestContext,
   makeLiquidationTestContext,
 } from '../../tools/liquidation.js';
+import type { LiquidationTestContext } from '../../tools/liquidation.js';
 
 const test = anyTest as TestFn<LiquidationTestContext>;
 
